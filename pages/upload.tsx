@@ -1,15 +1,12 @@
-// pages/upload.tsx - UPDATED VERSION
+// pages/upload.tsx - COMPLETE UPDATED VERSION
 import { useState, useRef, ChangeEvent } from 'react';
 import Navbar from '../components/navbar';
-import FileUploader from '../components/FileUploader'; // We'll create this
+import FileUploader from '../components/FileUploader';
 import "../app/globals.css";
-import { validateFile } from '@/lib/fileParser';
 
 export default function UploadPage() {
   const [form, setForm] = useState({ 
-    name: '', 
-    email: '', 
-    summary: '',
+    jobTitle: '',
     jobLink: '',
     jobDescription: '' 
   });
@@ -21,6 +18,7 @@ export default function UploadPage() {
   const [showTailoredResume, setShowTailoredResume] = useState(false);
   const [isTailoring, setIsTailoring] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [resumeContent, setResumeContent] = useState('');
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -32,21 +30,20 @@ export default function UploadPage() {
 
   const handleFileUpload = async (file: File) => {
     setUploadError('');
-    
     try {
+      const formData = new FormData();
+      formData.append('file', file);
+
       const response = await fetch('/api/resumes/parse-file', {
         method: 'POST',
-        body: createFormData(file),
+        body: formData,
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to parse file');
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Failed to parse file');
+      
       if (data.success) {
-        setForm(prev => ({ ...prev, summary: data.text }));
+        setResumeContent(data.text);
         setMessage('✅ File parsed successfully!');
       } else {
         throw new Error(data.error || 'Failed to process file');
@@ -58,14 +55,8 @@ export default function UploadPage() {
     }
   };
 
-  const createFormData = (file: File): FormData => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return formData;
-  };
-
   const handleTailorResume = async () => {
-    if (!form.summary.trim() || !form.jobDescription.trim()) {
+    if (!resumeContent.trim() || !form.jobDescription.trim()) {
       setMessage('❌ Please provide both resume content and job description');
       return;
     }
@@ -78,14 +69,13 @@ export default function UploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          resumeText: form.summary,
+          resumeText: resumeContent,
           jobDescription: form.jobDescription,
           jobLink: form.jobLink
         }),
       });
 
       const data = await response.json();
-
       if (data.success) {
         setTailoredResume(data.tailoredResume);
         setShowTailoredResume(true);
@@ -103,8 +93,13 @@ export default function UploadPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!form.name.trim() || !form.email.trim() || !form.summary.trim()) {
-      setMessage('❌ Please fill in all required fields');
+    if (!resumeContent.trim()) {
+      setMessage('❌ Please upload or paste a resume first');
+      return;
+    }
+
+    if (!form.jobTitle.trim() || !form.jobDescription.trim()) {
+      setMessage('❌ Job title and description are required');
       return;
     }
 
@@ -117,11 +112,10 @@ export default function UploadPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          summary: form.summary,
+          jobTitle: form.jobTitle,
           jobLink: form.jobLink,
-          jobDescription: form.jobDescription
+          jobDescription: form.jobDescription,
+          OGResume: resumeContent,
         }),
       });
 
@@ -130,57 +124,47 @@ export default function UploadPage() {
         throw new Error(errorData.error || 'Failed to save resume');
       }
 
-      let tailoredMessage = '';
-      
-      // If job description provided, get AI tailoring
-      if (form.jobDescription.trim()) {
-        try {
-          const tailorRes = await fetch('/api/resumes/tailor-resume', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              resumeText: form.summary,
-              jobDescription: form.jobDescription,
-              jobLink: form.jobLink
-            }),
-          });
+      // Get AI tailoring
+      const tailorRes = await fetch('/api/resumes/tailor-resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resumeText: resumeContent,
+          jobDescription: form.jobDescription,
+          jobLink: form.jobLink
+        }),
+      });
 
-          if (tailorRes.ok) {
-            const tailorData = await tailorRes.json();
-            tailoredMessage = ' AI tailoring completed!';
-            
-            // Update with tailored version
-            const addData = await addRes.json();
-            await fetch('/api/resumes/update', {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                id: addData.id,
-                tailoredResume: tailorData.tailoredResume
-              }),
-            });
-
-            setTailoredResume(tailorData.tailoredResume);
-            setShowTailoredResume(true);
-          }
-        } catch (tailorError) {
-          console.warn('AI tailoring failed, but resume was saved:', tailorError);
-        }
+      if (tailorRes.ok) {
+        const tailorData = await tailorRes.json();
+        setTailoredResume(tailorData.tailoredResume);
+        setShowTailoredResume(true);
+        
+        // Update with tailored version
+        const addData = await addRes.json();
+        await fetch('/api/resumes/update', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: addData.id,
+            tailoredResume: tailorData.tailoredResume
+          }),
+        });
       }
       
-      setMessage(`✅ Resume saved successfully!${tailoredMessage}`);
-      // Reset form but keep job info for potential new uploads
+      setMessage('✅ Resume tailored and saved successfully!');
+      // Reset form
       setForm({ 
-        name: '', 
-        email: '', 
-        summary: '', 
-        jobLink: form.jobLink, // Keep job link
-        jobDescription: form.jobDescription // Keep job description
+        jobTitle: '',
+        jobLink: '',
+        jobDescription: '' 
       });
+      setResumeContent('');
       setWordCount(0);
       
     } catch (error) {
-      setMessage(`❌ ${error instanceof Error ? error.message : 'Error saving resume'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Error processing resume';
+      setMessage(`❌ ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -200,22 +184,64 @@ export default function UploadPage() {
     const element = document.createElement('a');
     const file = new Blob([tailoredResume], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
-    element.download = `${form.name || 'tailored'}_resume_${new Date().getTime()}.txt`;
+    element.download = `${form.jobTitle || 'tailored'}_resume.txt`;
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
   };
 
-  const isFormValid = form.name.trim() && form.email.trim() && form.summary.trim();
-  const canTailor = form.summary.trim() && form.jobDescription.trim();
+  const canTailor = resumeContent.trim() && form.jobDescription.trim();
+  const isFormValid = form.jobTitle.trim() && form.jobDescription.trim() && resumeContent.trim();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-blue-900/20 dark:to-indigo-900/20">
       <Navbar />
+      
       <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* Hero Section - Keep your existing beautiful hero */}
+        {/* Hero Section */}
         <div className="relative overflow-hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 mb-8 shadow-2xl">
-          {/* ... your existing hero content ... */}
+          <div className="absolute inset-0 bg-black/10"></div>
+          <div className="absolute top-0 left-0 w-full h-full">
+            <div className="absolute top-1/4 left-1/4 w-24 h-24 bg-white/10 rounded-full blur-xl animate-pulse"></div>
+            <div className="absolute bottom-1/3 right-1/3 w-32 h-32 bg-white/5 rounded-full blur-2xl animate-pulse delay-1000"></div>
+          </div>
+          
+          <div className="relative z-10 flex flex-col lg:flex-row items-center">
+            <div className="lg:w-2/3 text-white mb-6 lg:mb-0">
+              <h1 className="text-4xl lg:text-6xl font-bold mb-4 leading-tight">
+                Transform Your Resume with{' '}
+                <span className="bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
+                  AI Magic
+                </span>
+              </h1>
+              <p className="text-xl lg:text-2xl mb-6 opacity-90 leading-relaxed">
+                Upload your resume and let our AI tailor it perfectly for your dream job in seconds.
+              </p>
+              <div className="flex flex-wrap gap-4 text-sm lg:text-base">
+                <div className="flex items-center bg-white/20 backdrop-blur-sm rounded-full px-4 py-2">
+                  <span className="mr-2">⚡</span>
+                  <span>Instant AI Analysis</span>
+                </div>
+                <div className="flex items-center bg-white/20 backdrop-blur-sm rounded-full px-4 py-2">
+                  <span className="mr-2">🎯</span>
+                  <span>Job-Specific Tailoring</span>
+                </div>
+                <div className="flex items-center bg-white/20 backdrop-blur-sm rounded-full px-4 py-2">
+                  <span className="mr-2">📈</span>
+                  <span>Higher Success Rate</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="lg:w-1/3 flex justify-center">
+              <div className="relative">
+                <div className="absolute -inset-4 bg-gradient-to-r from-yellow-300 to-orange-300 rounded-full blur-xl opacity-30 animate-pulse"></div>
+                <div className="relative text-6xl lg:text-8xl animate-bounce">
+                  🚀
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Main Form */}
@@ -269,10 +295,10 @@ export default function UploadPage() {
                       {uploadError}
                     </div>
                   )}
-                  {form.summary && (
+                  {resumeContent && (
                     <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg p-4">
                       <p className="text-green-800 dark:text-green-200 font-medium">
-                        ✅ File uploaded successfully! ({form.summary.length} characters)
+                        ✅ Resume ready for tailoring! ({resumeContent.length} characters)
                       </p>
                     </div>
                   )}
@@ -280,28 +306,26 @@ export default function UploadPage() {
               ) : (
                 <div className="relative">
                   <textarea
-                    name="summary"
+                    name="resumeContent"
                     rows={10}
-                    value={form.summary}
-                    onChange={handleChange}
-                    required
+                    value={resumeContent}
+                    onChange={(e) => setResumeContent(e.target.value)}
                     className="w-full px-6 py-4 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300 placeholder-gray-500 dark:placeholder-gray-400 resize-none"
                     placeholder="Paste your resume text here... Include your skills, experience, education, and achievements."
                   />
                   <div className="absolute bottom-4 right-4 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm text-gray-600 dark:text-gray-300">
-                    {form.summary.length} characters
+                    {resumeContent.length} characters
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Job Information Section - Keep your existing beautiful design */}
+            {/* Job Information Section */}
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <span className="text-3xl">🎯</span>
                   Job Information
-                  <span className="text-sm font-normal text-gray-500 dark:text-gray-400 ml-2">(Optional)</span>
                 </h2>
                 
                 {canTailor && (
@@ -315,12 +339,40 @@ export default function UploadPage() {
                         : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl hover:scale-105'
                     }`}
                   >
-                    {isTailoring ? '⏳ Tailoring...' : '🤖 Preview AI Tailoring'}
+                    {isTailoring ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                        Tailoring...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <span>🤖</span>
+                        Preview AI Tailoring
+                      </span>
+                    )}
                   </button>
                 )}
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    Job Title *
+                  </label>
+                  <input
+                    type="text"
+                    name="jobTitle"
+                    value={form.jobTitle}
+                    onChange={handleChange}
+                    required
+                    className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300"
+                    placeholder="e.g., Software Engineer, Marketing Manager"
+                  />
+                </div>
+                
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Job Posting URL
@@ -334,67 +386,28 @@ export default function UploadPage() {
                     placeholder="https://company.com/careers/job-posting"
                   />
                 </div>
-                
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center justify-between">
-                    Job Description
-                    <span className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-full">
-                      {wordCount} words
-                    </span>
-                  </label>
-                  <textarea
-                    name="jobDescription"
-                    rows={6}
-                    value={form.jobDescription}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300 placeholder-gray-500 dark:placeholder-gray-400 resize-none"
-                    placeholder="Paste the job description here for AI-powered resume tailoring..."
-                  />
-                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 items-center justify-between">
+                  Job Description *
+                  <span className="text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-full">
+                    {wordCount} words
+                  </span>
+                </label>
+                <textarea
+                  name="jobDescription"
+                  rows={6}
+                  value={form.jobDescription}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300 placeholder-gray-500 dark:placeholder-gray-400 resize-none"
+                  placeholder="Paste the job description here for AI-powered resume tailoring..."
+                />
               </div>
             </div>
 
-            {/* Personal Information - Keep your existing design */}
-            <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <span className="text-3xl">👤</span>
-                Personal Information
-              </h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={form.name}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300"
-                    placeholder="Enter your full name"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Email Address *
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={form.email}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white/50 dark:bg-gray-800/50 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-300"
-                    placeholder="your.email@example.com"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Submit Button - Keep your existing design */}
+            {/* Submit Button */}
             <div className="flex flex-col items-center space-y-4 pt-6">
               <button
                 type="submit"
@@ -405,8 +418,27 @@ export default function UploadPage() {
                     : 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
                 }`}
               >
-                {isSubmitting ? '⏳ Processing...' : '🚀 Generate AI-Tailored Resume'}
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                    Processing Your Resume...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="text-2xl">🚀</span>
+                    Generate AI-Tailored Resume
+                  </span>
+                )}
               </button>
+              
+              {!isFormValid && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                  Please fill in all required fields: job title, job description, and resume content
+                </p>
+              )}
             </div>
           </form>
         </div>
@@ -418,20 +450,22 @@ export default function UploadPage() {
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-white flex items-center gap-2">
                   <span className="text-3xl">✨</span>
-                  AI-Tailored Resume
+                  AI-Tailored Resume for {form.jobTitle}
                 </h2>
                 <div className="flex gap-3">
                   <button
                     onClick={copyToClipboard}
-                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
                   >
-                    📋 Copy
+                    <span>📋</span>
+                    Copy
                   </button>
                   <button
                     onClick={downloadTailoredResume}
-                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300"
+                    className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"
                   >
-                    ⬇️ Download
+                    <span>⬇️</span>
+                    Download
                   </button>
                   <button
                     onClick={() => setShowTailoredResume(false)}
@@ -457,8 +491,8 @@ export default function UploadPage() {
         {message && (
           <div className={`mt-6 p-4 rounded-xl text-center font-semibold ${
             message.includes('✅') 
-              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' 
-              : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+              ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-700' 
+              : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-700'
           }`}>
             {message}
           </div>

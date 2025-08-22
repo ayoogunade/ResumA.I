@@ -1,4 +1,4 @@
-//pages/api/resumes/add.ts
+// pages/api/resumes/add.ts
 import type { NextApiRequest, NextApiResponse } from "next"
 import clientPromise from "@/lib/mongodb"
 
@@ -12,20 +12,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const db = client.db("resumai")
     const collection = db.collection("resumes")
 
-    const { name, email, summary, jobLink } = req.body
+    // UPDATED: Changed to match new frontend fields
+    const { jobTitle, jobLink, jobDescription, OGResume } = req.body
 
-    if (!name || !email || !summary) {
+    // UPDATED: Changed validation to new required fields
+    if (!jobTitle || !jobDescription || !OGResume) {
       return res.status(400).json({ 
         success: false,
-        error: "Name, email, and summary are required" 
+        error: "Job title, job description, and resume content are required" 
       })
     }
 
     const result = await collection.insertOne({
-      name,
-      email,
-      OGResume: summary,
+      // UPDATED: New field structure
+      jobTitle,
       jobLink: jobLink || null,
+      jobDescription,
+      OGResume,
       tailoredResume: null,
       trashed: false,
       trashedAt: null,

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Navbar from '../components/navbar'
 import { Resume } from '../types/resume'
+import "../app/globals.css";
+
 
 
 export default function TrashPage() {
@@ -113,8 +115,7 @@ const restoreResume = async (id: string) => {
             <ul className="space-y-4">
                 {resumes.map((resume) => (
                 <li key={resume._id} className="border p-4 rounded bg-gray-100 shadow">
-                    <p><strong>Name:</strong> {resume.name}</p>
-                    <p><strong>Email:</strong> {resume.email}</p>
+                    <p><strong>Title:</strong> {resume.jobTitle}</p>
                     <p><strong>Trashed At:</strong> {new Date(resume.trashedAt).toLocaleString()}</p>
                     
                     {/* Action buttons */}
