@@ -1,0 +1,50 @@
+.
+├── app
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components
+│   └── navbar.tsx
+├── eslint.config.mjs
+├── fileOrganizationTree.txt
+├── lib
+│   ├── fileParser.ts
+│   ├── gemini.js
+│   └── mongodb.ts
+├── models
+│   └── Resume.ts
+├── next-env.d.ts
+├── next.config.ts
+├── notes.txt
+├── package-lock.json
+├── package.json
+├── pages
+│   ├── api
+│   │   └── resumes
+│   │       ├── add.ts
+│   │       ├── delete.ts
+│   │       ├── deleteForever.ts
+│   │       ├── history.ts
+│   │       ├── parse-file.ts
+│   │       ├── restore.ts
+│   │       ├── tailor-resume.ts
+│   │       ├── trash.ts
+│   │       └── update.ts
+│   ├── history.tsx
+│   ├── trash.tsx
+│   └── upload.tsx
+├── postcss.config.mjs
+├── public
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── README.md
+├── tailwind.config.js
+├── tsconfig.json
+└── types
+    └── resume.ts
+
+10 directories, 38 files

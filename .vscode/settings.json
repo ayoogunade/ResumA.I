@@ -1,0 +1,4 @@
+{
+    "git.ignoreLimitWarning": true,
+    "AutoPreview.serverURL": "http://localhost:3000/"
+}
