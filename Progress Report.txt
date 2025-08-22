@@ -1,14 +1,16 @@
 What Works/Good Things: 
 - Google Gemini AI Functionailty
 - Frontend looks amazing
+- Docx files are now Compatible
+- Fixed routing so /upload is now the default homepage
+- Link between history and trash section has been added
 
 What could be better:
 - The AI itself could be better with the results
 - The resulting text can be formatted to look better
 - The personal information section could be removed
-- The uploading file could be better because a docx File messes things up
-- There should be a way to link the history section to the trash so that 
-users can easily trash resumes From the history section
+- The entire history section should be revamped to be cleaner and there should be a way to view original resumes and 
+AI resumes side by side
 
 Prompt for future queries: 
 
