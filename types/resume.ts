@@ -1,5 +1,6 @@
 // types/resume.ts
 export interface Resume {
+  jobTitle: string;
   _id: string;
   name: string;
   OGResume: string;
