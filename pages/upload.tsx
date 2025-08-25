@@ -211,7 +211,7 @@ export default function UploadPage() {
               <h1 className="text-4xl lg:text-6xl font-bold mb-4 leading-tight">
                 Transform Your Resume with{' '}
                 <span className="bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
-                  AI Magic
+                  AI
                 </span>
               </h1>
               <p className="text-xl lg:text-2xl mb-6 opacity-90 leading-relaxed">

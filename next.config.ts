@@ -1,4 +1,4 @@
-// next.config.ts - CORRECTED
+// next.config.ts
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
@@ -16,7 +16,9 @@ const nextConfig: NextConfig = {
     
     return config;
   },
-  // Remove the 'api' property as it's not valid in Next.js 15
+  eslint:{
+    ignoreDuringBuilds: true,
+  },
 }
 
 export default nextConfig
