@@ -15,7 +15,7 @@ type Resume = {
 }
 
 type ExpandedSections = {
-  jobDescription: boolean
+  jobDescription: 'hidden' | 'preview' | 'full'
   originalResume: boolean
   tailoredResume: boolean
 }
@@ -33,6 +33,7 @@ export default function HistoryPage() {
   const [error, setError] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [expandedSections, setExpandedSections] = useState<Record<string, ExpandedSections>>({})
+  const [compareMode, setCompareMode] = useState<string | null>(null) // ID of resume in compare mode
   const [editModal, setEditModal] = useState<EditModalState>({
     isOpen: false,
     resumeId: null,
@@ -47,7 +48,8 @@ export default function HistoryPage() {
       const res = await fetch('/api/resumes/history')
       if (!res.ok) throw new Error('Failed to fetch history')
       const data = await res.json()
-      setResumes(data.resumes || [])
+      console.log('History API response:', data)
+      setResumes(data.data?.resumes || data.resumes || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load history')
     } finally {
@@ -56,19 +58,32 @@ export default function HistoryPage() {
   }
 
   const trashResume = async (id: string, jobTitle: string) => {
+    console.log('Attempting to trash resume with ID:', id, 'Title:', jobTitle);
     if (!confirm(`Move "${jobTitle}" to trash?`)) return
     
     try {
+      console.log('Making API call to trash resume with ID:', id);
       const res = await fetch('/api/resumes/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       })
       
-      if (!res.ok) throw new Error('Failed to trash resume')
+      console.log('Trash API response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('Trash API error response:', errorData);
+        throw new Error(errorData.message || 'Failed to trash resume');
+      }
+      
+      const data = await res.json();
+      console.log('Trash success response:', data);
+      
       await fetchResumes()
       setExpandedId(null)
     } catch (err) {
+      console.error('Trash error:', err);
       alert(err instanceof Error ? err.message : 'Failed to trash resume')
     }
   }
@@ -119,32 +134,57 @@ export default function HistoryPage() {
     if (expandedId !== id && !expandedSections[id]) {
       setExpandedSections(prev => ({
         ...prev,
-        [id]: { jobDescription: false, originalResume: false, tailoredResume: false }
+        [id]: { jobDescription: 'hidden', originalResume: false, tailoredResume: false }
       }))
     }
   }
 
   const toggleSection = (resumeId: string, section: keyof ExpandedSections) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [resumeId]: {
-        ...prev[resumeId],
-        [section]: !prev[resumeId]?.[section]
+    setExpandedSections(prev => {
+      const current = prev[resumeId] || { jobDescription: 'hidden', originalResume: false, tailoredResume: false }
+      
+      if (section === 'jobDescription') {
+        const currentState = current.jobDescription
+        let nextState: 'hidden' | 'preview' | 'full'
+        
+        if (currentState === 'hidden') nextState = 'preview'
+        else if (currentState === 'preview') nextState = 'full'  
+        else nextState = 'hidden'
+        
+        return {
+          ...prev,
+          [resumeId]: {
+            ...current,
+            jobDescription: nextState
+          }
+        }
       }
-    }))
+      
+      return {
+        ...prev,
+        [resumeId]: {
+          ...current,
+          [section]: !current[section]
+        }
+      }
+    })
+  }
+
+  const toggleCompareMode = (resumeId: string) => {
+    setCompareMode(compareMode === resumeId ? null : resumeId)
   }
 
   const expandAllSections = (resumeId: string) => {
     setExpandedSections(prev => ({
       ...prev,
-      [resumeId]: { jobDescription: true, originalResume: true, tailoredResume: true }
+      [resumeId]: { jobDescription: 'full', originalResume: true, tailoredResume: true }
     }))
   }
 
   const collapseAllSections = (resumeId: string) => {
     setExpandedSections(prev => ({
       ...prev,
-      [resumeId]: { jobDescription: false, originalResume: false, tailoredResume: false }
+      [resumeId]: { jobDescription: 'hidden', originalResume: false, tailoredResume: false }
     }))
   }
 
@@ -255,7 +295,7 @@ export default function HistoryPage() {
         </div>
       )}
 
-      <div className="max-w-4xl mx-auto p-6">
+      <div className={`mx-auto p-6 transition-all duration-300 ${compareMode ? 'max-w-7xl' : 'max-w-4xl'}`}>
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -286,41 +326,89 @@ export default function HistoryPage() {
             {resumes.map((resume) => {
               const isExpanded = expandedId === resume._id;
               const sections = expandedSections[resume._id] || { 
-                jobDescription: false, 
+                jobDescription: 'hidden', 
                 originalResume: false, 
                 tailoredResume: false 
               };
+              const isInCompareMode = compareMode === resume._id;
 
               return (
-                <div key={resume._id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                  {/* List Item Header */}
-                  <div className="p-4 cursor-pointer hover:bg-gray-50" onClick={() => toggleExpand(resume._id)}>
+                <div key={resume._id} className={`bg-white rounded-xl shadow-sm border-2 transition-all duration-200 ${
+                  isExpanded ? 'border-indigo-200 shadow-md' : 'border-gray-200'
+                } ${isInCompareMode ? 'ring-2 ring-blue-500' : ''} overflow-hidden`}>
+                  {/* Enhanced Header */}
+                  <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors duration-150" onClick={() => toggleExpand(resume._id)}>
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 truncate">
-                          {resume.jobTitle || 'Untitled Job'}
-                        </h3>
-                        <div className="flex items-center mt-1 text-sm text-gray-500">
-                          <span>{formatDate(resume.createdAt)}</span>
-                          {resume.createdAt && (
-                            <span className="mx-2">•</span>
-                          )}
-                          <span>{formatTime(resume.createdAt)}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                              <span className="text-indigo-600 font-semibold text-sm">📄</span>
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-gray-900 text-lg truncate">
+                              {resume.jobTitle || 'Untitled Job'}
+                            </h3>
+                            <div className="flex items-center mt-1 text-sm text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <span>📅</span>
+                                {formatDate(resume.createdAt)}
+                              </span>
+                              {resume.createdAt && (
+                                <>
+                                  <span className="mx-2">•</span>
+                                  <span className="flex items-center gap-1">
+                                    <span>⏰</span>
+                                    {formatTime(resume.createdAt)}
+                                  </span>
+                                </>
+                              )}
+                              {resume.tailoredResume && (
+                                <>
+                                  <span className="mx-2">•</span>
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <span className="mr-1">✨</span>
+                                    AI-Tailored
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2 ml-4">
+                        {resume.tailoredResume && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCompareMode(resume._id);
+                            }}
+                            className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+                              isInCompareMode 
+                                ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50 border border-blue-200'
+                            }`}
+                            title="Toggle compare mode"
+                          >
+                            {isInCompareMode ? '📊 Exit Compare' : '🔄 Compare'}
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             trashResume(resume._id, resume.jobTitle || 'Untitled Job');
                           }}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="px-3 py-2 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors flex items-center gap-1"
                           title="Move to trash"
                         >
-                          🗑️
+                          <span>🗑️</span>
+                          Move to Trash
                         </button>
-                        <span className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-                          ▼
+                        <span className={`transform transition-transform duration-200 text-gray-400 ${isExpanded ? 'rotate-180' : ''}`}>
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
                         </span>
                       </div>
                     </div>
@@ -328,197 +416,249 @@ export default function HistoryPage() {
 
                   {/* Expanded Content */}
                   {isExpanded && (
-                    <div className="border-t border-gray-200 p-4 bg-gray-50">
-                      {/* Section Controls */}
-                      <div className="flex justify-between items-center mb-4">
-                        <h4 className="font-medium text-gray-700">Content Sections</h4>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => expandAllSections(resume._id)}
-                            className="px-3 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded border border-blue-300 transition-colors"
-                          >
-                            Expand All
-                          </button>
-                          <button
-                            onClick={() => collapseAllSections(resume._id)}
-                            className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded border border-gray-300 transition-colors"
-                          >
-                            Collapse All
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Job Link with Edit Button */}
-                      <div className="mb-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-medium text-gray-700 text-sm">Job Posting</h5>
-                          <button
-                            onClick={() => openEditModal(resume)}
-                            className="text-xs text-gray-500 hover:text-blue-600 flex items-center"
-                          >
-                            <span className="mr-1">✏️</span>
-                            Edit
-                          </button>
-                        </div>
-                        {resume.jobLink ? (
-                          <div className="flex items-center justify-between bg-blue-50 px-3 py-2 rounded border border-blue-200">
-                            <a 
-                              href={resume.jobLink} 
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 hover:underline text-sm break-all"
+                    <div className="border-t border-gray-100">
+                      {/* Enhanced Section Controls */}
+                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">⚙️</span>
+                            <h4 className="font-semibold text-gray-800">Content Sections</h4>
+                          </div>
+                          <div className="flex space-x-3">
+                            {isInCompareMode && (
+                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                                <span className="mr-1">📊</span>
+                                Compare Mode Active
+                              </span>
+                            )}
+                            <button
+                              onClick={() => expandAllSections(resume._id)}
+                              className="px-4 py-2 text-sm text-blue-700 hover:text-blue-800 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors font-medium"
                             >
-                              <span className="mr-2">🔗</span>
-                              {truncateText(resume.jobLink, 40)}
-                            </a>
+                              📖 Expand All
+                            </button>
+                            <button
+                              onClick={() => collapseAllSections(resume._id)}
+                              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg border border-gray-300 transition-colors font-medium"
+                            >
+                              📋 Collapse All
+                            </button>
                           </div>
-                        ) : (
-                          <div className="text-gray-500 text-sm italic bg-gray-100 px-3 py-2 rounded border border-gray-200">
-                            No job link added
-                          </div>
-                        )}
+                        </div>
                       </div>
+                      
+                        {/* Enhanced Job Link Section */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">🔗</span>
+                              <h5 className="font-semibold text-gray-800">Job Posting</h5>
+                            </div>
+                            <button
+                              onClick={() => openEditModal(resume)}
+                              className="px-3 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors flex items-center gap-1"
+                            >
+                              <span>✏️</span>
+                              Edit Details
+                            </button>
+                          </div>
+                          {resume.jobLink ? (
+                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                              <a 
+                                href={resume.jobLink} 
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-700 hover:text-blue-900 hover:underline font-medium break-all flex items-center gap-2"
+                              >
+                                <span>🌐</span>
+                                {truncateText(resume.jobLink, 50)}
+                                <span className="text-xs">↗️</span>
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="text-gray-500 italic bg-gray-50 px-4 py-3 rounded-lg border border-gray-200 text-center">
+                              <span className="text-gray-400">📝</span> No job link added
+                            </div>
+                          )}
+                        </div>
 
-                      {/* Job Description Section */}
-                      {resume.jobDescription && (
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 
-                              className="font-medium text-gray-700 text-sm cursor-pointer hover:text-gray-900"
+                        {/* Enhanced Job Description Section */}
+                        {resume.jobDescription && (
+                          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div 
+                              className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors"
                               onClick={() => toggleSection(resume._id, 'jobDescription')}
                             >
-                              Job Description {sections.jobDescription ? '▲' : '▼'}
-                            </h5>
-                            <span className="text-xs text-gray-500">
-                              {resume.jobDescription.length} characters
-                            </span>
-                          </div>
-                          <div className={`text-gray-600 text-sm whitespace-pre-wrap bg-white p-3 rounded border border-gray-200 overflow-y-auto ${
-                            sections.jobDescription ? 'max-h-96' : 'max-h-32'
-                          }`}>
-                            {resume.jobDescription}
-                            {!sections.jobDescription && resume.jobDescription.length > 200 && (
-                              <div className="text-blue-600 text-xs mt-2 cursor-pointer" 
-                                   onClick={() => toggleSection(resume._id, 'jobDescription')}>
-                                Click to expand full description...
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">📋</span>
+                                <h5 className="font-semibold text-gray-800">Job Description</h5>
+                                <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                                  sections.jobDescription === 'hidden' 
+                                    ? 'bg-gray-100 text-gray-600' 
+                                    : sections.jobDescription === 'preview'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}>
+                                  {sections.jobDescription === 'hidden' && '🚫 Hidden'}
+                                  {sections.jobDescription === 'preview' && '👀 Preview'}
+                                  {sections.jobDescription === 'full' && '📄 Full'}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Resume Sections */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Original Resume */}
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 
-                              className="font-medium text-gray-700 text-sm cursor-pointer hover:text-gray-900"
-                              onClick={() => toggleSection(resume._id, 'originalResume')}
-                            >
-                              Original Resume {sections.originalResume ? '▲' : '▼'}
-                            </h5>
-                            <span className="text-xs text-gray-500">
-                              {resume.OGResume?.length || 0} characters
-                            </span>
-                          </div>
-                          <div className={`text-gray-600 text-sm whitespace-pre-wrap bg-white p-3 rounded border border-gray-200 overflow-y-auto ${
-                            sections.originalResume ? 'max-h-96' : 'max-h-40'
-                          }`}>
-                            {resume.OGResume || 'No original resume content available'}
-                            {!sections.originalResume && resume.OGResume && resume.OGResume.length > 150 && (
-                              <div className="text-blue-600 text-xs mt-2 cursor-pointer" 
-                                   onClick={() => toggleSection(resume._id, 'originalResume')}>
-                                Click to expand full resume...
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                  {resume.jobDescription.length} chars
+                                </span>
+                                <span className={`transform transition-transform duration-200 ${
+                                  sections.jobDescription === 'hidden' ? '' : 'rotate-180'
+                                }`}>
+                                  <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                  </svg>
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Tailored Resume */}
-                        {resume.tailoredResume && (
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <h5 
-                                className="font-medium text-green-700 text-sm cursor-pointer hover:text-green-900"
-                                onClick={() => toggleSection(resume._id, 'tailoredResume')}
-                              >
-                                AI-Tailored Version {sections.tailoredResume ? '▲' : '▼'}
-                              </h5>
-                              <span className="text-xs text-green-600">
-                                {resume.tailoredResume.length} characters
-                              </span>
                             </div>
-                            <div className={`text-gray-600 text-sm whitespace-pre-wrap bg-green-50 p-3 rounded border border-green-200 overflow-y-auto ${
-                              sections.tailoredResume ? 'max-h-96' : 'max-h-40'
-                            }`}>
-                              {resume.tailoredResume}
-                              {!sections.tailoredResume && resume.tailoredResume.length > 150 && (
-                                <div className="text-blue-600 text-xs mt-2 cursor-pointer" 
-                                     onClick={() => toggleSection(resume._id, 'tailoredResume')}>
-                                  Click to expand full resume...
+                            
+                            {sections.jobDescription !== 'hidden' && (
+                              <div className="border-t border-gray-100">
+                                <div className={`text-gray-700 whitespace-pre-wrap bg-gradient-to-b from-gray-50 to-white p-5 ${
+                                  sections.jobDescription === 'preview' ? 'max-h-32 overflow-hidden' : 'max-h-96 overflow-y-auto'
+                                }`}>
+                                  {sections.jobDescription === 'preview' 
+                                    ? resume.jobDescription.substring(0, 200) + (resume.jobDescription.length > 200 ? '...' : '')
+                                    : resume.jobDescription
+                                  }
+                                </div>
+                                {sections.jobDescription === 'preview' && resume.jobDescription.length > 200 && (
+                                  <div className="bg-blue-50 px-5 py-3 border-t border-blue-100">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleSection(resume._id, 'jobDescription');
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+                                    >
+                                      <span>📖</span>
+                                      Click to read full description
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Enhanced Resume Comparison Section */}
+                        <div className={`${isInCompareMode ? 'max-w-none' : 'max-w-5xl'}`}>
+                          <div className={`grid ${isInCompareMode ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 md:grid-cols-2'} ${isInCompareMode ? 'gap-8' : 'gap-6'}`}>
+                            
+                            {/* Original Resume */}
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                              <div 
+                                className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-100"
+                                onClick={() => toggleSection(resume._id, 'originalResume')}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">📄</span>
+                                  <h5 className="font-semibold text-gray-800">Original Resume</h5>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                    {resume.OGResume?.length || 0} chars
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const text = resume.OGResume || '';
+                                      navigator.clipboard.writeText(text);
+                                      alert('Original resume copied to clipboard!');
+                                    }}
+                                    className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="Copy to clipboard"
+                                  >
+                                    📋
+                                  </button>
+                                  <span className={`transform transition-transform duration-200 ${sections.originalResume ? 'rotate-180' : ''}`}>
+                                    <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {sections.originalResume && (
+                                <div className={`text-gray-700 text-sm whitespace-pre-wrap bg-gradient-to-b from-gray-50 to-white p-5 ${
+                                  isInCompareMode ? 'max-h-[600px]' : 'max-h-96'
+                                } overflow-y-auto`}>
+                                  {resume.OGResume || 'No original resume content available'}
+                                </div>
+                              )}
+                              
+                              {!sections.originalResume && resume.OGResume && (
+                                <div className="p-5">
+                                  <div className="text-gray-500 text-sm bg-gray-50 p-4 rounded-lg text-center border border-gray-200">
+                                    <span>📄</span> Click above to view original resume content
+                                  </div>
                                 </div>
                               )}
                             </div>
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Action Buttons */}
-                      <div className="flex justify-end space-x-2 mt-4 pt-4 border-t border-gray-200">
-                        <button
-                          onClick={() => {
-                            const text = resume.OGResume || '';
-                            navigator.clipboard.writeText(text);
-                            alert('Original resume copied to clipboard!');
-                          }}
-                          className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded border border-gray-300 transition-colors"
-                        >
-                          Copy Original
-                        </button>
-                        {resume.tailoredResume && (
-                          <button
-                            onClick={() => {
-                              const text = resume.tailoredResume || '';
-                              navigator.clipboard.writeText(text);
-                              alert('Tailored resume copied to clipboard!');
-                            }}
-                            className="px-3 py-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-100 rounded border border-green-300 transition-colors"
-                          >
-                            Copy Tailored
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            const text = resume.OGResume || '';
-                            const blob = new Blob([text], { type: 'text/plain' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `${resume.jobTitle || 'resume'}_original.txt`;
-                            a.click();
-                          }}
-                          className="px-3 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded border border-blue-300 transition-colors"
-                        >
-                          Download Original
-                        </button>
-                        {resume.tailoredResume && (
-                          <button
-                            onClick={() => {
-                              const text = resume.tailoredResume || '';
-                              const blob = new Blob([text], { type: 'text/plain' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `${resume.jobTitle || 'resume'}_tailored.txt`;
-                              a.click();
-                            }}
-                            className="px-3 py-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-100 rounded border border-green-300 transition-colors"
-                          >
-                            Download Tailored
-                          </button>
-                        )}
-                      </div>
+                            {/* AI-Tailored Resume */}
+                            {resume.tailoredResume && (
+                              <div className="bg-white rounded-xl border-2 border-green-200 shadow-sm overflow-hidden">
+                                <div 
+                                  className="flex items-center justify-between p-5 cursor-pointer hover:bg-green-50 transition-colors border-b border-green-100 bg-gradient-to-r from-green-50 to-emerald-50"
+                                  onClick={() => toggleSection(resume._id, 'tailoredResume')}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-lg">✨</span>
+                                    <h5 className="font-semibold text-green-800">AI-Tailored Version</h5>
+                                    <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full font-medium">
+                                      Enhanced
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                                      {resume.tailoredResume.length} chars
+                                    </span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(resume.tailoredResume!);
+                                        alert('Tailored resume copied to clipboard!');
+                                      }}
+                                      className="p-1 text-green-400 hover:text-green-600 hover:bg-green-100 rounded transition-colors"
+                                      title="Copy to clipboard"
+                                    >
+                                      📋
+                                    </button>
+                                    <span className={`transform transition-transform duration-200 ${sections.tailoredResume ? 'rotate-180' : ''}`}>
+                                      <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                      </svg>
+                                    </span>
+                                  </div>
+                                </div>
+                                
+                                {sections.tailoredResume && (
+                                  <div className={`text-gray-700 text-sm whitespace-pre-wrap bg-gradient-to-b from-green-50 to-white p-5 ${
+                                    isInCompareMode ? 'max-h-[600px]' : 'max-h-96'
+                                  } overflow-y-auto border-l-4 border-green-300`}>
+                                    {resume.tailoredResume}
+                                  </div>
+                                )}
+                                
+                                {!sections.tailoredResume && (
+                                  <div className="p-5">
+                                    <div className="text-green-600 text-sm bg-green-50 p-4 rounded-lg text-center border border-green-200">
+                                      <span>✨</span> Click above to view AI-tailored resume content
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                     </div>
                   )}
                 </div>

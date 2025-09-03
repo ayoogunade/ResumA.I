@@ -11,11 +11,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { id } = req.body
     if (!id) return res.status(400).json({ message: 'Resume ID is required' })
 
+    console.log('Permanently deleting resume with ID:', id);
+
     const client = await clientPromise
     const db = client.db('resumai')
     const collection = db.collection('resumes')
 
     const result = await collection.deleteOne({ _id: new ObjectId(id) })
+    
+    console.log('Delete result:', result);
 
     if (result.deletedCount === 1) {
       return res.status(200).json({ message: 'Resume permanently deleted' })

@@ -53,20 +53,32 @@ export default function TrashPage() {
   }
 
   const permanentlyDelete = async (id: string) => {
+    console.log('Attempting to permanently delete resume with ID:', id);
     if (!confirm('Are you sure? This action cannot be undone!')) return
     
     try {
+      console.log('Making API call to deleteForever with ID:', id);
       const res = await fetch('/api/resumes/deleteForever', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       })
       
-      if (!res.ok) throw new Error('Failed to delete permanently')
+      console.log('API response status:', res.status);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('API error response:', errorData);
+        throw new Error(errorData.message || 'Failed to delete permanently');
+      }
+      
+      const data = await res.json();
+      console.log('Delete success response:', data);
       
       fetchTrash()
       alert('Resume permanently deleted!')
     } catch (err) {
+      console.error('Delete error:', err);
       alert(err instanceof Error ? err.message : 'Failed to delete resume')
     }
   }

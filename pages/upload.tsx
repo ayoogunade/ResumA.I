@@ -1,7 +1,9 @@
 // pages/upload.tsx - COMPLETE UPDATED VERSION
-import { useState, useRef, ChangeEvent } from 'react';
+import { useState, ChangeEvent } from 'react';
 import Navbar from '../components/navbar';
 import FileUploader from '../components/FileUploader';
+import Toast from '../components/Toast';
+import { useToast } from '../hooks/useToast';
 import "../app/globals.css";
 
 export default function UploadPage() {
@@ -16,9 +18,10 @@ export default function UploadPage() {
   const [wordCount, setWordCount] = useState(0);
   const [tailoredResume, setTailoredResume] = useState('');
   const [showTailoredResume, setShowTailoredResume] = useState(false);
-  const [isTailoring, setIsTailoring] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [resumeContent, setResumeContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const { toast, success, error, hideToast } = useToast();
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -31,22 +34,32 @@ export default function UploadPage() {
   const handleFileUpload = async (file: File) => {
     setUploadError('');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('/api/resumes/parse-file', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to parse file');
-      
-      if (data.success) {
-        setResumeContent(data.text);
-        setMessage('✅ File parsed successfully!');
+      // Check if it's a PDF file - handle client-side
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        // Import parseFile dynamically for client-side PDF parsing
+        const { parseFile } = await import('../lib/fileParser');
+        const text = await parseFile(file);
+        setResumeContent(text);
+        setMessage('✅ PDF resume uploaded successfully!');
       } else {
-        throw new Error(data.error || 'Failed to process file');
+        // Use server-side parsing for DOCX and TXT files
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/resumes/parse-file', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to parse file');
+        
+        if (data.success) {
+          setResumeContent(data.text);
+          setMessage('✅ File parsed successfully!');
+        } else {
+          throw new Error(data.error || 'Failed to process file');
+        }
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process file';
@@ -55,40 +68,6 @@ export default function UploadPage() {
     }
   };
 
-  const handleTailorResume = async () => {
-    if (!resumeContent.trim() || !form.jobDescription.trim()) {
-      setMessage('❌ Please provide both resume content and job description');
-      return;
-    }
-
-    setIsTailoring(true);
-    setMessage('');
-
-    try {
-      const response = await fetch('/api/resumes/tailor-resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          resumeText: resumeContent,
-          jobDescription: form.jobDescription,
-          jobLink: form.jobLink
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setTailoredResume(data.tailoredResume);
-        setShowTailoredResume(true);
-        setMessage('✅ Resume tailored successfully!');
-      } else {
-        throw new Error(data.error || 'Failed to tailor resume');
-      }
-    } catch (error) {
-      setMessage(`❌ ${error instanceof Error ? error.message : 'Failed to tailor resume'}`);
-    } finally {
-      setIsTailoring(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,24 +86,7 @@ export default function UploadPage() {
     setMessage('');
 
     try {
-      // Save to database
-      const addRes = await fetch('/api/resumes/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobTitle: form.jobTitle,
-          jobLink: form.jobLink,
-          jobDescription: form.jobDescription,
-          OGResume: resumeContent,
-        }),
-      });
-
-      if (!addRes.ok) {
-        const errorData = await addRes.json();
-        throw new Error(errorData.error || 'Failed to save resume');
-      }
-
-      // Get AI tailoring
+      // Get AI tailoring first
       const tailorRes = await fetch('/api/resumes/tailor-resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,33 +99,34 @@ export default function UploadPage() {
 
       if (tailorRes.ok) {
         const tailorData = await tailorRes.json();
-        setTailoredResume(tailorData.tailoredResume);
-        setShowTailoredResume(true);
-        
-        // Update with tailored version
-        const addData = await addRes.json();
-        await fetch('/api/resumes/update', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: addData.id,
-            tailoredResume: tailorData.tailoredResume
-          }),
-        });
+        if (tailorData.success) {
+          setTailoredResume(tailorData.data.tailoredResume);
+          setShowTailoredResume(true);
+          setMessage('✅ Resume tailored successfully! You can now save it to your history.');
+        } else {
+          throw new Error(tailorData.error || 'Failed to tailor resume');
+        }
+      } else {
+        // Handle tailoring API errors
+        const tailorData = await tailorRes.json();
+        let errorMessage = tailorData.error || 'Failed to tailor resume';
+        if (tailorData.code === 'AI_QUOTA_EXCEEDED') {
+          errorMessage = '⏳ AI service is at capacity. Please try again in a few minutes.';
+        } else if (tailorData.code === 'AI_TIMEOUT') {
+          errorMessage = '⏱️ AI processing took too long. Please try again with shorter content.';
+        } else if (tailorData.code === 'AI_RATE_LIMITED') {
+          errorMessage = '🚦 Too many AI requests. Please wait 30 seconds before trying again.';
+        } else if (tailorRes.status === 503) {
+          errorMessage = '🔧 AI service is temporarily unavailable. Please try again in a few minutes.';
+        }
+        throw new Error(errorMessage);
       }
       
-      setMessage('✅ Resume tailored and saved successfully!');
-      // Reset form
-      setForm({ 
-        jobTitle: '',
-        jobLink: '',
-        jobDescription: '' 
-      });
-      setResumeContent('');
-      setWordCount(0);
-      
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error processing resume';
+      let errorMessage = 'Error processing resume';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
       setMessage(`❌ ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
@@ -173,10 +136,9 @@ export default function UploadPage() {
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(tailoredResume);
-      setMessage('✅ Copied to clipboard!');
-      setTimeout(() => setMessage(''), 2000);
-    } catch (error) {
-      setMessage('❌ Failed to copy');
+      success('Copied to clipboard!');
+    } catch (err) {
+      error('Failed to copy to clipboard');
     }
   };
 
@@ -190,12 +152,94 @@ export default function UploadPage() {
     document.body.removeChild(element);
   };
 
-  const canTailor = resumeContent.trim() && form.jobDescription.trim();
+  const saveTailoredResume = async () => {
+    console.log('=== SAVE BUTTON CLICKED ===');
+    console.log('tailoredResume length:', tailoredResume.length);
+    console.log('jobTitle:', form.jobTitle);
+    console.log('jobDescription length:', form.jobDescription.length);
+    console.log('resumeContent length:', resumeContent.length);
+    
+    if (!tailoredResume.trim()) {
+      setMessage('❌ No tailored resume to save. Please generate one first.');
+      return;
+    }
+    
+    if (!form.jobTitle.trim()) {
+      setMessage('❌ Please enter a job title before saving.');
+      return;
+    }
+    
+    if (!form.jobDescription.trim()) {
+      setMessage('❌ Please enter a job description before saving.');
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage('');
+
+    try {
+      console.log('About to make API call to /api/resumes/add');
+      
+      const requestData = {
+        jobTitle: form.jobTitle,
+        jobLink: form.jobLink || '',
+        jobDescription: form.jobDescription,
+        originalResume: resumeContent,
+        tailoredResume: tailoredResume,
+      };
+      
+      console.log('Request data:', {
+        ...requestData,
+        originalResume: `${requestData.originalResume.substring(0, 100)}...`,
+        tailoredResume: `${requestData.tailoredResume.substring(0, 100)}...`
+      });
+      
+      // Save to database
+      const response = await fetch('/api/resumes/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData),
+      });
+
+      console.log('API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API error response:', errorData);
+        throw new Error(errorData.error || 'Failed to save tailored resume');
+      }
+
+      const data = await response.json();
+      console.log('API success response:', data);
+      success('Resume saved successfully! You can find it in your history.');
+      
+      // Optional: Clear existing message
+      setMessage('');
+
+    } catch (err) {
+      console.error('Save error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save tailored resume';
+      error(errorMessage);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const isFormValid = form.jobTitle.trim() && form.jobDescription.trim() && resumeContent.trim();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-blue-900/20 dark:to-indigo-900/20">
       <Navbar />
+      
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          isVisible={toast.isVisible}
+          onClose={hideToast}
+        />
+      )}
       
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Hero Section */}
@@ -327,34 +371,6 @@ export default function UploadPage() {
                   <span className="text-3xl">🎯</span>
                   Job Information
                 </h2>
-                
-                {canTailor && (
-                  <button
-                    type="button"
-                    onClick={handleTailorResume}
-                    disabled={isTailoring}
-                    className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform ${
-                      isTailoring
-                        ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg hover:shadow-xl hover:scale-105'
-                    }`}
-                  >
-                    {isTailoring ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                        </svg>
-                        Tailoring...
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <span>🤖</span>
-                        Preview AI Tailoring
-                      </span>
-                    )}
-                  </button>
-                )}
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -453,6 +469,30 @@ export default function UploadPage() {
                   AI-Tailored Resume for {form.jobTitle}
                 </h2>
                 <div className="flex gap-3">
+                  <button
+                    onClick={saveTailoredResume}
+                    disabled={isSaving}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2 ${
+                      isSaving
+                        ? 'bg-white/10 text-white/50 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {isSaving ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <span>💾</span>
+                        Save to History
+                      </>
+                    )}
+                  </button>
                   <button
                     onClick={copyToClipboard}
                     className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center gap-2"

@@ -1,7 +1,7 @@
 // pages/api/resumes/parse-file.ts
 import { NextApiRequest, NextApiResponse } from 'next';
 import { IncomingForm } from 'formidable';
-import { parseFile, validateFile } from '@/lib/fileParser';
+import { parseFileServerSide, validateFile } from '@/lib/fileParser';
 import fs from 'fs';
 
 export const config = {
@@ -55,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: validation.error });
     }
 
-    const textContent = await parseFile(tempFile);
+    const textContent = await parseFileServerSide(tempFile);
     fs.unlinkSync(file.filepath);
 
     return res.status(200).json({ 

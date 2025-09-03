@@ -1,16 +1,18 @@
 // pages/api/resumes/trash.ts
 
 import { NextApiRequest, NextApiResponse } from 'next'
-import { ObjectId } from 'mongodb'
 import clientPromise from '@/lib/mongodb'
 
 type TrashResponse = {
   resumes: Array<{
     _id: string
-    name: string
-    email: string
-    summary: string
+    jobTitle?: string
+    jobLink?: string
+    jobDescription?: string
+    originalResume?: string
+    tailoredResume?: string
     trashedAt: string
+    createdAt?: string
   }>
   total?: number
   page?: number
@@ -54,10 +56,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // Format the response data
     const formattedResumes = trashedResumes.map(resume => ({
       _id: resume._id.toString(),
-      name: resume.name,
-      email: resume.email,
-      summary: resume.summary,
-      trashedAt: resume.trashedAt.toISOString()
+      jobTitle: resume.jobTitle,
+      jobLink: resume.jobLink,
+      jobDescription: resume.jobDescription,
+      originalResume: resume.originalResume,
+      tailoredResume: resume.tailoredResume,
+      trashedAt: resume.trashedAt?.toISOString(),
+      createdAt: resume.createdAt?.toISOString()
     }))
 
     return res.status(200).json({ 
