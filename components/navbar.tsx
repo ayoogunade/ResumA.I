@@ -1,14 +1,14 @@
 // components/Navbar.tsx
 'use client'
 import Link from 'next/link'
-import { useRouter } from 'next/router'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 
 export default function Navbar() {
-  const router = useRouter()
+  const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
-  const isActive = (path: string) => router.pathname === path
+  const isActive = (path: string) => pathname === path
 
   const navItems = [
     { href: '/upload', label: 'Upload', icon: '📤', color: 'from-blue-500 to-blue-600' },

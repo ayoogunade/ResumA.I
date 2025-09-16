@@ -97,7 +97,7 @@ async function parsePDF(arrayBuffer: ArrayBuffer): Promise<string> {
 export async function parseFile(file: File): Promise<string> {
   try {
     // Validate file type
-    if (!Object.values(SUPPORTED_FILE_TYPES).includes(file.type as any) && 
+    if (!(Object.values(SUPPORTED_FILE_TYPES) as string[]).includes(file.type) && 
         !SUPPORTED_FILE_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))) {
       throw new Error(`Unsupported file type: ${file.type}. Supported types: PDF, DOCX, TXT`);
     }
@@ -135,7 +135,7 @@ export async function parseFileServerSide(file: File): Promise<string> {
     const serverSupportedTypes = [SUPPORTED_FILE_TYPES.DOCX, SUPPORTED_FILE_TYPES.TEXT];
     const serverSupportedExtensions = ['.docx', '.txt'];
     
-    if (!serverSupportedTypes.includes(file.type as any) && 
+    if (!(serverSupportedTypes as string[]).includes(file.type) && 
         !serverSupportedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
       throw new Error(`Server-side parsing only supports DOCX and TXT files. Received: ${file.type}`);
     }
@@ -176,7 +176,7 @@ export function validateFile(file: File): { isValid: boolean; error?: string } {
     return { isValid: false, error: 'File size must be less than 5MB' };
   }
   
-  const isValidType = Object.values(SUPPORTED_FILE_TYPES).includes(file.type as any) || 
+  const isValidType = (Object.values(SUPPORTED_FILE_TYPES) as string[]).includes(file.type) || 
                      SUPPORTED_FILE_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext));
   
   if (!isValidType) {

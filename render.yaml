@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: resumai
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: resumai
+          property: host
+      - key: MONGODB_URI
+        sync: false
+      - key: GOOGLE_AI_API_KEY
+        sync: false
+      - key: MAX_FILE_SIZE_MB
+        value: 5
+      - key: ALLOWED_FILE_TYPES
+        value: docx,txt,pdf
+      - key: RATE_LIMIT_MAX
+        value: 100
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
